@@ -1,65 +1,208 @@
-import Image from "next/image";
+import Link from 'next/link';
+import { Robot3DWrapper } from '@/components/Robot3DWrapper';
+import { MapPreview } from '@/components/MapPreview';
+import { getAllCompanies } from '@/lib/db';
+
+const GOOGLE_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSdT3A0Ah1BfbIXTU9wLFMzWnwI4rteeSr_vv5KrUDEFHmfDNA/viewform?usp=publish-editor';
+
+export const dynamic = 'force-dynamic';
 
 export default function Home() {
+  const companies = getAllCompanies();
+  const featured = companies.filter(c => c.verification_status === 'Verified').slice(0, 8);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="pt-14">
+      {/* Hero */}
+      <section className="min-h-[90vh] flex items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-4">
+                // Global Egocentric Data Marketplace
+              </p>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight">
+                Autonomy<br />Machine Map
+              </h1>
+              <p className="mt-6 text-sm leading-relaxed max-w-lg text-[var(--foreground)]">
+                The world map of egocentric data collection platforms,
+                research labs, and capture networks. Discover, compare,
+                and request datasets for embodied AI.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/map" className="btn btn-primary">
+                  Explore Map
+                </Link>
+                <a href={GOOGLE_FORM_URL} target="_blank" rel="noopener noreferrer" className="btn">
+                  Add Your Company
+                </a>
+              </div>
+            </div>
+            <div className="hidden lg:block">
+              <Robot3DWrapper />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Map Preview */}
+      <section className="py-16">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-6">
+            // Live Network Map
           </p>
+          <MapPreview />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* Section A: What is egocentric data? */}
+      <section className="py-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-4">
+            // Section 01
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-6">
+            What is egocentric data?
+          </h2>
+          <p className="text-sm leading-relaxed mb-8 max-w-2xl">
+            First-person sensor data captured from the perspective of a human or robot
+            performing real-world tasks. The raw fuel for training embodied AI agents,
+            vision-language-action models, and autonomous systems.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mt-8">
+            {[
+              { icon: '[ CAM ]', label: 'RGB Video' },
+              { icon: '[ IMU ]', label: 'Motion' },
+              { icon: '[ DPT ]', label: 'Depth' },
+              { icon: '[ GZE ]', label: 'Gaze Track' },
+              { icon: '[ HND ]', label: 'Hand Pose' },
+            ].map((sensor) => (
+              <div key={sensor.label} className="border border-[var(--border)] p-4 text-center">
+                <p className="font-mono text-lg font-bold mb-2">{sensor.icon}</p>
+                <p className="text-xs uppercase tracking-wider">{sensor.label}</p>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* Section B: Who is on the map? */}
+      <section className="py-20 border-t border-[var(--border)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-4">
+            // Section 02
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-8">
+            Who is on the map?
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {[
+              {
+                title: 'Platforms',
+                desc: 'End-to-end data collection infrastructure providers',
+              },
+              {
+                title: 'Research Labs',
+                desc: 'University and corporate labs producing egocentric datasets',
+              },
+              {
+                title: 'Capture Networks',
+                desc: 'Distributed networks of data collectors across regions',
+              },
+              {
+                title: 'Industrial Deployments',
+                desc: 'Factory and warehouse egocentric capture operations',
+              },
+            ].map((item) => (
+              <div key={item.title} className="border border-[var(--border)] p-5">
+                <p className="font-bold text-sm mb-1">{`> ${item.title}`}</p>
+                <p className="text-xs text-[var(--muted)]">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Section C: How the marketplace works */}
+      <section className="py-20 border-t border-[var(--border)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-4">
+            // Section 03
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-10">
+            How the marketplace works
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              {
+                step: '01',
+                title: 'Discover',
+                desc: 'Browse the map and directory to find egocentric data providers matching your needs.',
+              },
+              {
+                step: '02',
+                title: 'Compare',
+                desc: 'Filter by sensors, regions, tags, and scale. Review profiles and proof links.',
+              },
+              {
+                step: '03',
+                title: 'Request',
+                desc: 'Submit a dataset request with your specs. Get matched to the best providers.',
+              },
+            ].map((item) => (
+              <div key={item.step} className="relative">
+                <p className="text-5xl font-bold text-[var(--accent)]">{item.step}</p>
+                <p className="font-bold text-sm mt-3 mb-2">{item.title}</p>
+                <p className="text-xs leading-relaxed text-[var(--muted)]">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Section D: Featured hubs */}
+      <section className="py-20 border-t border-[var(--border)]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-4">
+            // Section 04
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold mb-10">
+            Featured hubs
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {featured.map((company) => (
+              <Link
+                key={company.id}
+                href={`/company/${company.id}`}
+                className="block border border-[var(--border)] p-4 hover:bg-[var(--accent)] transition-colors"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <p className="font-bold text-sm">{company.name}</p>
+                  {company.verification_status === 'Verified' && (
+                    <span className="chip chip-filled text-[0.6rem]">V</span>
+                  )}
+                </div>
+                <p className="text-xs text-[var(--muted)] mb-3">{company.one_liner}</p>
+                <div className="flex flex-wrap gap-1">
+                  {company.sensors.slice(0, 3).map(s => (
+                    <span key={s} className="chip text-[0.6rem]">{s}</span>
+                  ))}
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-10 text-center">
+            <Link href="/map" className="btn">
+              View Full Map →
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

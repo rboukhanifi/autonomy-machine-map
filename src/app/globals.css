@@ -1,26 +1,196 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4efe6;
+  --foreground: #111111;
+  --border: #111111;
+  --muted: #c8c2b8;
+  --accent: #d4cec4;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-ibm-plex-mono);
+  --font-mono: var(--font-ibm-plex-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #111 #f4efe6;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace;
+}
+
+::selection {
+  background: #111;
+  color: #f4efe6;
+}
+
+/* Scroll reveal animations */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+
+/* Map styles */
+.map-container {
+  background: var(--background);
+}
+
+.map-container path.land {
+  fill: none;
+  stroke: #111;
+  stroke-width: 0.5;
+}
+
+.map-container path.land-fill {
+  fill: #e8e3da;
+  stroke: #111;
+  stroke-width: 0.5;
+}
+
+.map-container path.graticule {
+  fill: none;
+  stroke: #d4cec4;
+  stroke-width: 0.3;
+  stroke-dasharray: 2,2;
+}
+
+.map-container .pin {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.map-container .pin:hover {
+  transform: scale(1.5);
+}
+
+.map-container .pin-label {
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 10px;
+  fill: #111;
+  pointer-events: none;
+}
+
+/* Crosshair pin animation */
+@keyframes ping {
+  0% { r: 3; opacity: 1; }
+  100% { r: 12; opacity: 0; }
+}
+
+.pin-ping {
+  animation: ping 2s ease-out infinite;
+}
+
+/* Form styles */
+input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="number"],
+textarea,
+select {
+  background: transparent;
+  border: 1px solid #111;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 0.875rem;
+  color: #111;
+  outline: none;
+  transition: box-shadow 0.2s ease;
+  width: 100%;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: 3px 3px 0 #111;
+}
+
+/* ASCII art styling */
+.ascii-art {
+  font-family: var(--font-ibm-plex-mono), 'IBM Plex Mono', 'Courier New', monospace;
+  line-height: 1.15;
+  white-space: pre;
+  color: #111;
+  font-size: 0.6rem;
+  user-select: none;
+}
+
+@media (min-width: 768px) {
+  .ascii-art {
+    font-size: 0.7rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .ascii-art {
+    font-size: 0.8rem;
+  }
+}
+
+/* Chip / tag styles */
+.chip {
+  display: inline-block;
+  border: 1px solid #111;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--font-ibm-plex-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.chip-filled {
+  background: #111;
+  color: #f4efe6;
+}
+
+/* Button base */
+.btn {
+  display: inline-block;
+  border: 1px solid #111;
+  padding: 0.5rem 1.25rem;
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: transparent;
+  color: #111;
+  text-decoration: none;
+}
+
+.btn:hover {
+  background: #111;
+  color: #f4efe6;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.3);
+}
+
+.btn-primary {
+  background: #111;
+  color: #f4efe6;
+}
+
+.btn-primary:hover {
+  background: transparent;
+  color: #111;
 }
