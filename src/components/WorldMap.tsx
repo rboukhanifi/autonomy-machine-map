@@ -238,7 +238,7 @@ export function WorldMap({ companies, selected, onSelect, onClusterHover, onClus
     });
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([1, 12])
+      .scaleExtent([1, 30])
       .on('zoom', (event) => {
         const t = event.transform;
         transformRef.current = t;
@@ -315,7 +315,7 @@ export function WorldMap({ companies, selected, onSelect, onClusterHover, onClus
           .on('mouseleave', () => onClusterHoverRef.current(null, null))
           .on('click', (e) => {
             e.stopPropagation();
-            onSelectRef.current(cluster.companies[0]);
+            onClusterClickRef.current(cluster, screenPos(cx, cy, transformRef.current));
             onClusterHoverRef.current(null, null);
           });
       } else {
