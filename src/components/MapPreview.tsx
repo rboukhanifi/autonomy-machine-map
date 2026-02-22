@@ -11,7 +11,16 @@ const LAND = '#2a2a2a';
 const LAND_STROKE = '#444';
 const GRATICULE = '#ddd8cf';
 
-const PINS = [
+interface Pin {
+  lng: number;
+  lat: number;
+}
+
+interface MapPreviewProps {
+  pins?: Pin[];
+}
+
+const DEFAULT_PINS: Pin[] = [
   { lng: -122.18, lat: 37.45 },
   { lng: -122.17, lat: 37.43 },
   { lng: -122.33, lat: 47.61 },
@@ -29,7 +38,8 @@ const PINS = [
   { lng: 103.82, lat: 1.35 },
 ];
 
-export function MapPreview() {
+export function MapPreview({ pins }: MapPreviewProps) {
+  const PINS = pins ?? DEFAULT_PINS;
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [visiblePins, setVisiblePins] = useState(0);
@@ -54,16 +64,6 @@ export function MapPreview() {
     const svg = d3.select(svgRef.current)
       .attr('width', width).attr('height', height);
     svg.selectAll('*').remove();
-
-    // Yellow glow filter
-    const defs = svg.append('defs');
-    const glow = defs.append('filter').attr('id', 'preview-shadow').attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%');
-    glow.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '2.5').attr('result', 'blur');
-    glow.append('feFlood').attr('flood-color', '#ffdd44').attr('flood-opacity', '0.5').attr('result', 'color');
-    glow.append('feComposite').attr('in', 'color').attr('in2', 'blur').attr('operator', 'in').attr('result', 'glow');
-    const ms = glow.append('feMerge');
-    ms.append('feMergeNode').attr('in', 'glow');
-    ms.append('feMergeNode').attr('in', 'SourceGraphic');
 
     const projection = d3.geoNaturalEarth1()
       .fitSize([width - 20, height - 20], { type: 'Sphere' } as d3.GeoPermissibleObjects)
@@ -97,18 +97,19 @@ export function MapPreview() {
     const pinsGroup = g.append('g');
     pinsGroupRef.current = pinsGroup;
 
-    // Start intersection observer
+    // Start intersection observer for staggered reveal
     if (!hasAnimated.current) {
       const observer = new IntersectionObserver(
         ([entry]) => {
           if (entry.isIntersecting) {
             hasAnimated.current = true;
             let i = 0;
+            const speed = PINS.length > 20 ? 60 : 180;
             const interval = setInterval(() => {
               i++;
               setVisiblePins(i);
               if (i >= PINS.length) clearInterval(interval);
-            }, 180);
+            }, speed);
             observer.unobserve(container);
           }
         },
@@ -120,7 +121,7 @@ export function MapPreview() {
     }
   }, [worldData]);
 
-  // Animate pins
+  // Draw pins (staggered reveal, no pulse animation)
   useEffect(() => {
     const projection = projRef.current;
     const pinsGroup = pinsGroupRef.current;
@@ -133,36 +134,10 @@ export function MapPreview() {
       if (!coords) return;
       const [cx, cy] = coords;
 
-      // Pulse ring - yellow
-      const ring = pinsGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', 3)
-        .attr('fill', 'none').attr('stroke', 'rgba(255,204,0,0.3)').attr('stroke-width', 0.8);
-
-      function pulse() {
-        ring.attr('r', 3).attr('opacity', 0.5)
-          .transition().duration(2500 + Math.random() * 1500).ease(d3.easeCircleOut)
-          .attr('r', 14).attr('opacity', 0).on('end', pulse);
-      }
-      pulse();
-
-      // Crosshair
-      pinsGroup.append('line')
-        .attr('x1', cx - 4).attr('y1', cy).attr('x2', cx + 4).attr('y2', cy)
-        .attr('stroke', '#b89a00').attr('stroke-width', 0.4).attr('opacity', 0.4);
-      pinsGroup.append('line')
-        .attr('x1', cx).attr('y1', cy - 4).attr('x2', cx).attr('y2', cy + 4)
-        .attr('stroke', '#b89a00').attr('stroke-width', 0.4).attr('opacity', 0.4);
-
-      // Outer glow
-      pinsGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', 5)
-        .attr('fill', '#ffcc00').attr('opacity', 0.12);
-
-      // Main yellow dot with glow
+      // Main yellow dot
       pinsGroup.append('circle')
         .attr('cx', cx).attr('cy', cy).attr('r', 3.5)
         .attr('fill', '#ffcc00').attr('stroke', '#b89a00').attr('stroke-width', 0.6)
-        .attr('filter', 'url(#preview-shadow)')
         .attr('opacity', 0)
         .transition().duration(400).attr('opacity', 1);
 

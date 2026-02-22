@@ -23,13 +23,23 @@ interface Company {
   website: string;
 }
 
+export interface CityCluster {
+  city: string;
+  country: string;
+  lat: number;
+  lng: number;
+  companies: Company[];
+  count: number;
+}
+
 interface WorldMapProps {
   companies: Company[];
   selected: Company | null;
   onSelect: (c: Company | null) => void;
+  onClusterHover: (cluster: CityCluster | null, pos: { x: number; y: number } | null) => void;
+  onClusterClick: (cluster: CityCluster | null, pos: { x: number; y: number } | null) => void;
 }
 
-// Beige palette
 const BG = '#f4efe6';
 const OCEAN = '#ece7de';
 const LAND = '#2a2a2a';
@@ -39,16 +49,122 @@ const GRATICULE = '#d8d3ca';
 const GRATICULE_FINE = '#e0dbd2';
 const PIN_DOT = '#ffcc00';
 const PIN_STROKE = '#b89a00';
-const PIN_GLOW = '#ffdd44';
-const PIN_RING_COLOR = 'rgba(255,204,0,0.35)';
-const LABEL_COLOR = '#111';
 const MUTED = '#999';
 
-export function WorldMap({ companies, selected, onSelect }: WorldMapProps) {
+function clusterByCity(companies: Company[]): CityCluster[] {
+  const map = new Map<string, Company[]>();
+  for (const c of companies) {
+    const key = `${c.hq_city}|${c.hq_country}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(c);
+  }
+  const clusters: CityCluster[] = [];
+  for (const [, group] of map) {
+    const lat = group.reduce((s, c) => s + c.lat, 0) / group.length;
+    const lng = group.reduce((s, c) => s + c.lng, 0) / group.length;
+    clusters.push({
+      city: group[0].hq_city,
+      country: group[0].hq_country,
+      lat,
+      lng,
+      companies: group,
+      count: group.length,
+    });
+  }
+  return clusters;
+}
+
+const MERGE_PX = 35;
+
+function mergeNearbyClusters(
+  baseClusters: CityCluster[],
+  projection: d3.GeoProjection,
+  k: number,
+): CityCluster[] {
+  const n = baseClusters.length;
+  if (n === 0) return [];
+
+  // Project each cluster to screen pixels at current zoom
+  const screenXY = baseClusters.map(c => {
+    const p = projection([c.lng, c.lat]);
+    return p ? { x: p[0] * k, y: p[1] * k } : { x: 0, y: 0 };
+  });
+
+  // Union-Find
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i: number): number {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  }
+  function union(a: number, b: number) { parent[find(a)] = find(b); }
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const dx = screenXY[i].x - screenXY[j].x;
+      const dy = screenXY[i].y - screenXY[j].y;
+      if (dx * dx + dy * dy < MERGE_PX * MERGE_PX) union(i, j);
+    }
+  }
+
+  // Group by root
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(i);
+  }
+
+  const merged: CityCluster[] = [];
+  for (const indices of groups.values()) {
+    if (indices.length === 1) {
+      merged.push(baseClusters[indices[0]]);
+      continue;
+    }
+    // Weighted-average position, combine companies
+    let totalLat = 0, totalLng = 0, totalCount = 0;
+    const allCompanies: Company[] = [];
+    for (const idx of indices) {
+      const c = baseClusters[idx];
+      totalLat += c.lat * c.count;
+      totalLng += c.lng * c.count;
+      totalCount += c.count;
+      allCompanies.push(...c.companies);
+    }
+    const primary = baseClusters[indices[0]];
+    const extraCities = indices.length - 1;
+    merged.push({
+      city: extraCities > 0 ? `${primary.city} +${extraCities}` : primary.city,
+      country: primary.country,
+      lat: totalLat / totalCount,
+      lng: totalLng / totalCount,
+      companies: allCompanies,
+      count: totalCount,
+    });
+  }
+  return merged;
+}
+
+function screenPos(svgX: number, svgY: number, transform: d3.ZoomTransform) {
+  return { x: transform.applyX(svgX), y: transform.applyY(svgY) };
+}
+
+export function WorldMap({ companies, selected, onSelect, onClusterHover, onClusterClick }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [worldData, setWorldData] = useState<Topology | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  const transformRef = useRef<d3.ZoomTransform>(d3.zoomIdentity);
+
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const onClusterHoverRef = useRef(onClusterHover);
+  onClusterHoverRef.current = onClusterHover;
+  const onClusterClickRef = useRef(onClusterClick);
+  onClusterClickRef.current = onClusterClick;
+
+  const projectionRef = useRef<d3.GeoProjection | null>(null);
+  const pinsGroupRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const baseClustersRef = useRef<CityCluster[]>([]);
 
   useEffect(() => {
     fetch('/world-110m.json')
@@ -56,6 +172,7 @@ export function WorldMap({ companies, selected, onSelect }: WorldMapProps) {
       .then(data => setWorldData(data));
   }, []);
 
+  // Draw the base map once
   useEffect(() => {
     if (!worldData || !svgRef.current || !containerRef.current) return;
 
@@ -63,212 +180,89 @@ export function WorldMap({ companies, selected, onSelect }: WorldMapProps) {
     const container = containerRef.current;
     const width = container.clientWidth;
     const height = container.clientHeight;
+    if (width <= 0 || height <= 0) return;
 
     svg.attr('width', width).attr('height', height);
     svg.selectAll('*').remove();
 
-    // Defs
-    const defs = svg.append('defs');
-
-    // Yellow glow filter for pins
-    const glow = defs.append('filter').attr('id', 'pin-glow').attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%');
-    glow.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '3').attr('result', 'blur');
-    glow.append('feFlood').attr('flood-color', PIN_GLOW).attr('flood-opacity', '0.6').attr('result', 'color');
-    glow.append('feComposite').attr('in', 'color').attr('in2', 'blur').attr('operator', 'in').attr('result', 'glow');
-    const mergeGlow = glow.append('feMerge');
-    mergeGlow.append('feMergeNode').attr('in', 'glow');
-    mergeGlow.append('feMergeNode').attr('in', 'SourceGraphic');
-
-    // Stronger glow for hover
-    const glowStrong = defs.append('filter').attr('id', 'pin-glow-strong').attr('x', '-150%').attr('y', '-150%').attr('width', '400%').attr('height', '400%');
-    glowStrong.append('feGaussianBlur').attr('in', 'SourceGraphic').attr('stdDeviation', '5').attr('result', 'blur');
-    glowStrong.append('feFlood').attr('flood-color', PIN_GLOW).attr('flood-opacity', '0.8').attr('result', 'color');
-    glowStrong.append('feComposite').attr('in', 'color').attr('in2', 'blur').attr('operator', 'in').attr('result', 'glow');
-    const mergeGlow2 = glowStrong.append('feMerge');
-    mergeGlow2.append('feMergeNode').attr('in', 'glow');
-    mergeGlow2.append('feMergeNode').attr('in', 'SourceGraphic');
-
-    // Projection
     const projection = d3.geoNaturalEarth1()
       .fitSize([width - 40, height - 40], { type: 'Sphere' } as d3.GeoPermissibleObjects)
       .translate([width / 2, height / 2]);
+    projectionRef.current = projection;
 
     const path = d3.geoPath(projection);
     const g = svg.append('g');
 
-    // Background fill
     g.append('rect')
       .attr('width', width * 3).attr('height', height * 3)
       .attr('x', -width).attr('y', -height)
       .attr('fill', BG);
 
-    // Sphere (ocean)
     g.append('path')
       .datum({ type: 'Sphere' } as d3.GeoPermissibleObjects)
       .attr('d', path)
-      .attr('fill', OCEAN)
-      .attr('stroke', '#bbb')
-      .attr('stroke-width', 0.8);
+      .attr('fill', OCEAN).attr('stroke', '#bbb').attr('stroke-width', 0.8);
 
-    // Graticule (fine)
     const graticule2 = d3.geoGraticule().step([10, 10]);
-    g.append('path')
-      .datum(graticule2())
-      .attr('d', path)
-      .attr('fill', 'none')
-      .attr('stroke', GRATICULE_FINE)
-      .attr('stroke-width', 0.2);
+    g.append('path').datum(graticule2()).attr('d', path)
+      .attr('fill', 'none').attr('stroke', GRATICULE_FINE).attr('stroke-width', 0.2);
 
-    // Graticule (major)
     const graticule = d3.geoGraticule().step([30, 30]);
-    g.append('path')
-      .datum(graticule())
-      .attr('d', path)
-      .attr('fill', 'none')
-      .attr('stroke', GRATICULE)
-      .attr('stroke-width', 0.4);
+    g.append('path').datum(graticule()).attr('d', path)
+      .attr('fill', 'none').attr('stroke', GRATICULE).attr('stroke-width', 0.4);
 
-    // Countries
-    const countries = topojson.feature(
-      worldData,
-      worldData.objects.countries as GeometryCollection
-    );
-
+    const countries = topojson.feature(worldData, worldData.objects.countries as GeometryCollection);
     g.selectAll('path.country')
       .data((countries as GeoJSON.FeatureCollection).features)
-      .join('path')
-      .attr('class', 'country')
-      .attr('d', path)
-      .attr('fill', LAND)
-      .attr('stroke', LAND_STROKE)
-      .attr('stroke-width', 0.5);
+      .join('path').attr('class', 'country').attr('d', path)
+      .attr('fill', LAND).attr('stroke', LAND_STROKE).attr('stroke-width', 0.5);
 
-    // Internal borders
-    const borders = topojson.mesh(
-      worldData,
-      worldData.objects.countries as GeometryCollection,
-      (a, b) => a !== b
-    );
+    const borders = topojson.mesh(worldData, worldData.objects.countries as GeometryCollection, (a, b) => a !== b);
+    g.append('path').datum(borders).attr('d', path)
+      .attr('fill', 'none').attr('stroke', BORDER).attr('stroke-width', 0.3);
 
-    g.append('path')
-      .datum(borders)
-      .attr('d', path)
-      .attr('fill', 'none')
-      .attr('stroke', BORDER)
-      .attr('stroke-width', 0.3);
+    const eq = projection([0, 0]);
+    if (eq) {
+      g.append('line')
+        .attr('x1', 0).attr('y1', eq[1]).attr('x2', width).attr('y2', eq[1])
+        .attr('stroke', '#bbb').attr('stroke-width', 0.4).attr('stroke-dasharray', '6,3');
+    }
 
-    // Equator
-    g.append('line')
-      .attr('x1', 0).attr('y1', projection([0, 0])![1])
-      .attr('x2', width).attr('y2', projection([0, 0])![1])
-      .attr('stroke', '#bbb').attr('stroke-width', 0.4)
-      .attr('stroke-dasharray', '6,3');
-
-    // Pins
+    // Single pins group
     const pinsGroup = g.append('g').attr('class', 'pins');
+    pinsGroupRef.current = pinsGroup;
 
-    companies.forEach(company => {
-      const coords = projection([company.lng, company.lat]);
-      if (!coords) return;
-      const [cx, cy] = coords;
-
-      const pinGroup = pinsGroup.append('g')
-        .style('cursor', 'pointer')
-        .on('click', (e) => { e.stopPropagation(); onSelect(company); });
-
-      // Animated pulse ring - yellow
-      const ring = pinGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy)
-        .attr('r', 4)
-        .attr('fill', 'none')
-        .attr('stroke', PIN_RING_COLOR)
-        .attr('stroke-width', 1);
-
-      function pulse() {
-        ring
-          .attr('r', 5).attr('opacity', 0.6)
-          .transition().duration(2200 + Math.random() * 800).ease(d3.easeCircleOut)
-          .attr('r', 22).attr('opacity', 0)
-          .on('end', pulse);
-      }
-      pulse();
-
-      // Second ring offset
-      const ring2 = pinGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy)
-        .attr('r', 4)
-        .attr('fill', 'none')
-        .attr('stroke', PIN_RING_COLOR)
-        .attr('stroke-width', 0.6);
-
-      function pulse2() {
-        ring2
-          .attr('r', 5).attr('opacity', 0.3)
-          .transition().delay(600).duration(2500 + Math.random() * 800).ease(d3.easeCircleOut)
-          .attr('r', 28).attr('opacity', 0)
-          .on('end', pulse2);
-      }
-      pulse2();
-
-      // Crosshair - subtle
-      const cs = 8;
-      pinGroup.append('line')
-        .attr('x1', cx - cs).attr('y1', cy).attr('x2', cx + cs).attr('y2', cy)
-        .attr('stroke', PIN_STROKE).attr('stroke-width', 0.6).attr('opacity', 0.5);
-      pinGroup.append('line')
-        .attr('x1', cx).attr('y1', cy - cs).attr('x2', cx).attr('y2', cy + cs)
-        .attr('stroke', PIN_STROKE).attr('stroke-width', 0.6).attr('opacity', 0.5);
-
-      // Outer glow circle
-      pinGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', 6)
-        .attr('fill', PIN_DOT)
-        .attr('opacity', 0.15);
-
-      // Main yellow dot with glow
-      const mainDot = pinGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', 4.5)
-        .attr('fill', PIN_DOT)
-        .attr('stroke', PIN_STROKE).attr('stroke-width', 0.8)
-        .attr('filter', 'url(#pin-glow)');
-
-      // Inner bright core
-      pinGroup.append('circle')
-        .attr('cx', cx).attr('cy', cy).attr('r', 2)
-        .attr('fill', '#fff');
-
-      // Label
-      const label = pinGroup.append('text')
-        .attr('x', cx + 12).attr('y', cy + 3.5)
-        .text(company.name)
-        .attr('fill', LABEL_COLOR)
-        .attr('font-size', '9px')
-        .attr('font-family', 'monospace')
-        .attr('font-weight', '600')
-        .attr('opacity', 0)
-        .attr('paint-order', 'stroke')
-        .attr('stroke', BG).attr('stroke-width', 3);
-
-      // Hover
-      pinGroup
-        .on('mouseenter', function () {
-          label.attr('opacity', 1);
-          mainDot.transition().duration(150).attr('r', 7).attr('filter', 'url(#pin-glow-strong)');
-        })
-        .on('mouseleave', function () {
-          label.attr('opacity', 0);
-          mainDot.transition().duration(150).attr('r', 4.5).attr('filter', 'url(#pin-glow)');
-        });
+    svg.on('click', () => {
+      onSelectRef.current(null);
+      onClusterClickRef.current(null, null);
     });
 
-    // Click background to deselect
-    svg.on('click', () => onSelect(null));
-
-    // Zoom
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([1, 12])
       .on('zoom', (event) => {
-        g.attr('transform', event.transform.toString());
+        const t = event.transform;
+        transformRef.current = t;
+        g.attr('transform', t.toString());
+
+        // Counter-scale pins so they stay constant visual size
+        pinsGroup.selectAll<SVGGElement, unknown>('.pin').each(function() {
+          const el = d3.select(this);
+          const cx = +el.attr('data-cx');
+          const cy = +el.attr('data-cy');
+          el.attr('transform', `translate(${cx},${cy}) scale(${1 / t.k})`);
+        });
+
+        onClusterHoverRef.current(null, null);
+        onClusterClickRef.current(null, null);
+      })
+      .on('end', () => {
+        // Re-cluster at the new zoom level when gesture settles
+        const proj = projectionRef.current;
+        const pg = pinsGroupRef.current;
+        if (!proj || !pg) return;
+        const currentK = transformRef.current.k;
+        const merged = mergeNearbyClusters(baseClustersRef.current, proj, currentK);
+        drawPins(merged, proj, pg, currentK);
       });
 
     zoomRef.current = zoom;
@@ -277,14 +271,98 @@ export function WorldMap({ companies, selected, onSelect }: WorldMapProps) {
     return () => {
       svg.selectAll('*').remove();
       svg.on('.zoom', null);
+      pinsGroupRef.current = null;
+      projectionRef.current = null;
     };
-  }, [worldData, companies, onSelect]);
+  }, [worldData]);
+
+  // Reusable pin-drawing helper
+  function drawPins(
+    clusters: CityCluster[],
+    projection: d3.GeoProjection,
+    pinsGroup: d3.Selection<SVGGElement, unknown, null, undefined>,
+    currentK: number,
+  ) {
+    pinsGroup.selectAll('*').remove();
+
+    const SINGLE_R = 6;
+    const MULTI_R = 10;
+
+    clusters.forEach(cluster => {
+      const coords = projection([cluster.lng, cluster.lat]);
+      if (!coords) return;
+      const [cx, cy] = coords;
+
+      const pinG = pinsGroup.append('g')
+        .attr('class', 'pin')
+        .attr('data-cx', cx)
+        .attr('data-cy', cy)
+        .attr('transform', `translate(${cx},${cy}) scale(${1 / currentK})`)
+        .style('cursor', 'pointer');
+
+      if (cluster.count === 1) {
+        pinG.append('circle')
+          .attr('cx', 0).attr('cy', 0).attr('r', SINGLE_R)
+          .attr('fill', PIN_DOT).attr('stroke', PIN_STROKE).attr('stroke-width', 0.8);
+        pinG.append('circle')
+          .attr('cx', 0).attr('cy', 0).attr('r', 2.5)
+          .attr('fill', '#fff');
+
+        pinG
+          .on('mouseenter', () => {
+            onClusterHoverRef.current(cluster, screenPos(cx, cy, transformRef.current));
+          })
+          .on('mouseleave', () => onClusterHoverRef.current(null, null))
+          .on('click', (e) => {
+            e.stopPropagation();
+            onSelectRef.current(cluster.companies[0]);
+            onClusterHoverRef.current(null, null);
+          });
+      } else {
+        pinG.append('circle')
+          .attr('cx', 0).attr('cy', 0).attr('r', MULTI_R)
+          .attr('fill', PIN_DOT).attr('stroke', PIN_STROKE).attr('stroke-width', 1);
+        pinG.append('text')
+          .attr('x', 0).attr('y', 0)
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .attr('fill', '#111')
+          .attr('font-size', '11px')
+          .attr('font-family', 'monospace')
+          .attr('font-weight', '700')
+          .text(cluster.count);
+
+        pinG
+          .on('mouseenter', () => {
+            onClusterHoverRef.current(cluster, screenPos(cx, cy, transformRef.current));
+          })
+          .on('mouseleave', () => onClusterHoverRef.current(null, null))
+          .on('click', (e) => {
+            e.stopPropagation();
+            onClusterClickRef.current(cluster, screenPos(cx, cy, transformRef.current));
+            onClusterHoverRef.current(null, null);
+          });
+      }
+    });
+  }
+
+  // Draw cluster pins whenever companies change
+  useEffect(() => {
+    const projection = projectionRef.current;
+    const pinsGroup = pinsGroupRef.current;
+    if (!projection || !pinsGroup) return;
+
+    const base = clusterByCity(companies);
+    baseClustersRef.current = base;
+    const currentK = transformRef.current.k;
+    const merged = mergeNearbyClusters(base, projection, currentK);
+    drawPins(merged, projection, pinsGroup, currentK);
+  }, [companies]);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative" style={{ background: BG }}>
+    <div ref={containerRef} className="absolute inset-0" style={{ background: BG }}>
       <svg ref={svgRef} className="w-full h-full" />
 
-      {/* HUD */}
       <div className="absolute top-3 left-3 text-[10px] font-mono uppercase pointer-events-none" style={{ color: MUTED }}>
         // AMM Global Network
       </div>
@@ -295,13 +373,11 @@ export function WorldMap({ companies, selected, onSelect }: WorldMapProps) {
         Egocentric Data Providers
       </div>
 
-      {/* Corner brackets */}
       <div className="absolute top-0 left-0 w-6 h-6 border-t border-l border-black/15 pointer-events-none" />
       <div className="absolute top-0 right-0 w-6 h-6 border-t border-r border-black/15 pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-6 h-6 border-b border-l border-black/15 pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-6 h-6 border-b border-r border-black/15 pointer-events-none" />
 
-      {/* Zoom controls */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-1">
         <button
           onClick={() => {

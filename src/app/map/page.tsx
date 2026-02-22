@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { WorldMap } from '@/components/WorldMap';
+import { WorldMap, CityCluster } from '@/components/WorldMap';
 
 interface Company {
   id: number;
@@ -22,10 +22,10 @@ interface Company {
   lng: number;
 }
 
-const ALL_SENSORS = ['RGB', 'Audio', 'IMU', 'Depth', 'Gaze', 'Hands'];
-const ALL_TAGS = ['Industrial', 'Home', 'Robotics', 'VLA', 'Teleop', 'Multi-modal', 'Contributor network'];
-const ALL_REGIONS = ['North America', 'Europe', 'Asia', 'India', 'SEA', 'Global'];
-const ALL_CATEGORIES = ['Platform', 'Lab', 'Capture network'];
+const ALL_SENSORS = ['RGB', 'Audio', 'IMU', 'Depth', 'Gaze', 'Hands', 'Force/Tactile', 'Motion Capture', 'Lidar'];
+const ALL_TAGS = ['Industrial', 'Home', 'Robotics', 'VLA', 'Teleop', 'Multi-modal', 'Contributor network', 'Humanoid', 'Foundation Model', 'Simulation', 'Open Source', 'Dexterous Manipulation'];
+const ALL_REGIONS = ['North America', 'Europe', 'Asia', 'India', 'SEA', 'Global', 'South Korea', 'Middle East'];
+const ALL_CATEGORIES = ['Platform', 'Lab', 'Capture network', 'Startup', 'Enterprise', 'Research'];
 
 export default function MapPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -37,6 +37,20 @@ export default function MapPage() {
   const [filterRegions, setFilterRegions] = useState<string[]>([]);
   const [filterCategories, setFilterCategories] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+
+  const [tooltip, setTooltip] = useState<{
+    cluster: CityCluster;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [popup, setPopup] = useState<{
+    cluster: CityCluster;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch('/api/companies')
@@ -70,9 +84,49 @@ export default function MapPage() {
     setFiltered(result);
   }, [companies, search, filterSensors, filterTags, filterRegions, filterCategories]);
 
+  // Clear popup/tooltip when filters change
+  useEffect(() => {
+    setPopup(null);
+    setTooltip(null);
+  }, [filtered]);
+
   const toggleFilter = (arr: string[], setArr: (v: string[]) => void, val: string) => {
     setArr(arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val]);
   };
+
+  const handleClusterHover = useCallback((cluster: CityCluster | null, pos: { x: number; y: number } | null) => {
+    if (cluster && pos) {
+      setTooltip({ cluster, x: pos.x, y: pos.y });
+    } else {
+      setTooltip(null);
+    }
+  }, []);
+
+  const handleClusterClick = useCallback((cluster: CityCluster | null, pos: { x: number; y: number } | null) => {
+    if (cluster && pos) {
+      setPopup({ cluster, x: pos.x, y: pos.y });
+      setTooltip(null);
+    } else {
+      setPopup(null);
+    }
+  }, []);
+
+  const handleSelect = useCallback((c: Company | null) => {
+    setSelected(c);
+    if (c) setPopup(null);
+  }, []);
+
+  // Clamp popup position to stay within container
+  function clampPos(x: number, y: number, w: number, h: number) {
+    const container = mapContainerRef.current;
+    if (!container) return { x, y };
+    const rect = container.getBoundingClientRect();
+    const clamped = {
+      x: Math.min(Math.max(x, 8), rect.width - w - 8),
+      y: Math.min(Math.max(y, 8), rect.height - h - 8),
+    };
+    return clamped;
+  }
 
   return (
     <div className="pt-14 h-screen flex flex-col">
@@ -140,12 +194,83 @@ export default function MapPage() {
         )}
 
         {/* Map area */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative" ref={mapContainerRef}>
           <WorldMap
             companies={filtered}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={handleSelect}
+            onClusterHover={handleClusterHover}
+            onClusterClick={handleClusterClick}
           />
+
+          {/* Tooltip (hover, non-interactive) */}
+          {tooltip && !popup && (
+            <div
+              className="absolute pointer-events-none z-20"
+              style={{
+                left: tooltip.x + 16,
+                top: tooltip.y - 12,
+              }}
+            >
+              <div className="bg-[#111] text-[#f4efe6] px-3 py-2 text-xs font-mono border border-[#333] max-w-[240px]">
+                <div className="font-bold mb-1">
+                  {tooltip.cluster.city}, {tooltip.cluster.country}
+                </div>
+                {tooltip.cluster.count === 1 ? (
+                  <div className="text-[#ccc]">{tooltip.cluster.companies[0].name}</div>
+                ) : (
+                  <>
+                    <div className="text-[#999] mb-1">{tooltip.cluster.count} companies</div>
+                    {tooltip.cluster.companies.slice(0, 6).map(c => (
+                      <div key={c.id} className="text-[#ccc] truncate">{c.name}</div>
+                    ))}
+                    {tooltip.cluster.count > 6 && (
+                      <div className="text-[#666] mt-0.5">+{tooltip.cluster.count - 6} more</div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Popup (click, interactive) */}
+          {popup && (
+            <div
+              className="absolute z-30"
+              style={{
+                left: clampPos(popup.x + 16, popup.y - 16, 320, popup.cluster.count * 28 + 48).x,
+                top: clampPos(popup.x + 16, popup.y - 16, 320, popup.cluster.count * 28 + 48).y,
+              }}
+            >
+              <div className="bg-[var(--background)] border border-[#111] px-3 py-2 text-xs font-mono max-w-[320px] shadow-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-bold">
+                    {popup.cluster.city}, {popup.cluster.country}
+                  </div>
+                  <button
+                    onClick={() => setPopup(null)}
+                    className="text-[var(--muted)] hover:text-[#111] ml-3 text-sm leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="flex flex-col gap-0.5 max-h-[300px] overflow-y-auto">
+                  {popup.cluster.companies.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        handleSelect(c);
+                        setPopup(null);
+                      }}
+                      className="text-left px-2 py-1.5 hover:bg-[#111] hover:text-[#f4efe6] transition-colors whitespace-normal break-words"
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Detail drawer */}

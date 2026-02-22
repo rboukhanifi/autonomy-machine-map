@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Robot3DWrapper } from '@/components/Robot3DWrapper';
 import { MapPreview } from '@/components/MapPreview';
 import { getAllCompanies } from '@/lib/db';
 
@@ -10,6 +9,14 @@ export const dynamic = 'force-dynamic';
 export default function Home() {
   const companies = getAllCompanies();
   const featured = companies.filter(c => c.verification_status === 'Verified').slice(0, 8);
+
+  // Derive deduplicated pins from all companies (round to ~0.5 degree grid to avoid overlap)
+  const pinMap = new Map<string, { lat: number; lng: number }>();
+  companies.forEach(c => {
+    const key = `${Math.round(c.lat * 2) / 2},${Math.round(c.lng * 2) / 2}`;
+    if (!pinMap.has(key)) pinMap.set(key, { lat: c.lat, lng: c.lng });
+  });
+  const pins = Array.from(pinMap.values()).slice(0, 40);
 
   return (
     <div className="pt-14">
@@ -38,9 +45,6 @@ export default function Home() {
                 </a>
               </div>
             </div>
-            <div className="hidden lg:block">
-              <Robot3DWrapper />
-            </div>
           </div>
         </div>
       </section>
@@ -51,7 +55,7 @@ export default function Home() {
           <p className="text-xs uppercase tracking-[0.3em] text-[var(--muted)] mb-6">
             // Live Network Map
           </p>
-          <MapPreview />
+          <MapPreview pins={pins} />
         </div>
       </section>
 
@@ -70,13 +74,16 @@ export default function Home() {
             vision-language-action models, and autonomous systems.
           </p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mt-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 gap-4 mt-8">
             {[
               { icon: '[ CAM ]', label: 'RGB Video' },
               { icon: '[ IMU ]', label: 'Motion' },
               { icon: '[ DPT ]', label: 'Depth' },
               { icon: '[ GZE ]', label: 'Gaze Track' },
               { icon: '[ HND ]', label: 'Hand Pose' },
+              { icon: '[ FRC ]', label: 'Force/Tactile' },
+              { icon: '[ MOC ]', label: 'Mo-Cap' },
+              { icon: '[ LDR ]', label: 'Lidar' },
             ].map((sensor) => (
               <div key={sensor.label} className="border border-[var(--border)] p-4 text-center">
                 <p className="font-mono text-lg font-bold mb-2">{sensor.icon}</p>
@@ -97,7 +104,7 @@ export default function Home() {
             Who is on the map?
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
               {
                 title: 'Platforms',
@@ -112,8 +119,16 @@ export default function Home() {
                 desc: 'Distributed networks of data collectors across regions',
               },
               {
-                title: 'Industrial Deployments',
-                desc: 'Factory and warehouse egocentric capture operations',
+                title: 'Startups',
+                desc: 'Venture-backed robotics and AI companies building with egocentric data',
+              },
+              {
+                title: 'Enterprise',
+                desc: 'Large established companies like NVIDIA, Tesla, and Boston Dynamics',
+              },
+              {
+                title: 'Research Projects',
+                desc: 'Open-source university research like DexCap, EgoMimic, and LeRobot',
               },
             ].map((item) => (
               <div key={item.title} className="border border-[var(--border)] p-5">
